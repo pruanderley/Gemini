@@ -1,0 +1,91 @@
+name: Build APK - Gemini API Chat
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Adicionar plataforma Android
+        run: |
+          rm -rf android
+          npx cap add android
+
+      - name: Injetar MainActivity com Gemini WebView
+        run: |
+          mkdir -p android/app/src/main/java/com/gemini/google
+          cp patches/MainActivity.java \
+             android/app/src/main/java/com/gemini/google/MainActivity.java
+
+      - name: Adicionar permissões no AndroidManifest
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          sed -i 's|</manifest>|    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>\n</manifest>|' $MANIFEST
+
+      - name: Sincronizar arquivos web
+        run: npx cap sync android
+
+      - name: Gerar ou restaurar Keystore
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "Restaurando keystore do Secret..."
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/gemini-release.keystore
+          else
+            echo "Gerando nova keystore..."
+            keytool -genkeypair \
+              -alias gemini-key \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -keystore android/app/gemini-release.keystore \
+              -storepass gemini123 \
+              -keypass gemini123 \
+              -dname "CN=Gemini API, OU=App, O=Uanderley, L=Brasil, ST=Brasil, C=BR" \
+              -noprompt
+            echo ""
+            echo "══════════════════════════════════════════"
+            echo "IMPORTANTE: Salve este Secret no GitHub!"
+            echo "Settings > Secrets > KEYSTORE_BASE64"
+            echo "══════════════════════════════════════════"
+            base64 -w 0 android/app/gemini-release.keystore
+            echo ""
+          fi
+
+      - name: Compilar APK assinado
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=../app/gemini-release.keystore \
+            -Pandroid.injected.signing.store.password=gemini123 \
+            -Pandroid.injected.signing.key.alias=gemini-key \
+            -Pandroid.injected.signing.key.password=gemini123 \
+            --no-daemon
+
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gemini-API-Chat-APK
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
