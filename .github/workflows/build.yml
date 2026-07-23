@@ -24,6 +24,40 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Organizar arquivos (aceita arquivos soltos na raiz)
+        run: |
+          # ── www: os arquivos do app ──
+          mkdir -p www
+          for f in index.html sw.js manifest.json icon-192.png icon-512.png icon-512-maskable.png; do
+            if [ -f "$f" ]; then
+              cp "$f" "www/$f"
+              echo "copiado da raiz para www/: $f"
+            fi
+          done
+          echo "── Conteúdo final de www/: ──"
+          ls -la www/
+          if [ ! -f "www/index.html" ]; then
+            echo "ERRO: não existe index.html nem na raiz nem em www/"
+            exit 1
+          fi
+          if [ ! -f "www/manifest.json" ]; then
+            echo "AVISO: manifest.json não encontrado — o APK funciona, mas o PWA não fica instalável"
+          fi
+          # ── assets: as fontes dos ícones do Android ──
+          mkdir -p assets
+          for f in icon.png icon-only.png icon-foreground.png icon-background.png splash.png splash-dark.png; do
+            if [ -f "$f" ] && [ ! -f "assets/$f" ]; then
+              cp "$f" "assets/$f"
+              echo "copiado da raiz para assets/: $f"
+            fi
+          done
+          echo "── Conteúdo final de assets/: ──"
+          ls -la assets/
+          if [ ! -f "assets/icon.png" ] && [ ! -f "assets/icon-only.png" ]; then
+            echo "ERRO: nenhum ícone encontrado (icon.png ou icon-only.png)"
+            exit 1
+          fi
+
       - name: Instalar dependências
         run: npm install
 
@@ -100,16 +134,7 @@ jobs:
           ls -la ~/.android/debug.keystore
 
       - name: Gerar ícones e splash
-        run: |
-          if [ ! -d "assets" ]; then
-            echo "ERRO: pasta assets/ não encontrada na raiz do repositório!"
-            echo "Conteúdo da raiz:"
-            ls -la
-            exit 1
-          fi
-          echo "Arquivos encontrados em assets/:"
-          ls -la assets/
-          npx @capacitor/assets generate --android
+        run: npx @capacitor/assets generate --android
 
       - name: Sincronizar Capacitor
         run: npx cap sync android
