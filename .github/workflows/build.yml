@@ -43,14 +43,61 @@ jobs:
           sed -i "s/versionName \"1.0\"/versionName \"1.0.${{ github.run_number }}\"/" android/app/build.gradle
           grep -E "versionCode|versionName" android/app/build.gradle
 
-      - name: Usar keystore fixo (assinatura igual em todos os builds)
+      - name: Usar keystore fixo (embutido abaixo em base64)
         run: |
-          if [ ! -f "keystore/debug.keystore" ]; then
-            echo "ERRO: arquivo keystore/debug.keystore não encontrado no repositório!"
-            exit 1
-          fi
           mkdir -p ~/.android
-          cp keystore/debug.keystore ~/.android/debug.keystore
+          cat > /tmp/keystore.b64 << 'FIM_KEYSTORE'
+          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
+          FIM_KEYSTORE
+          base64 -di /tmp/keystore.b64 > ~/.android/debug.keystore
+          echo "Keystore instalado:"
+          ls -la ~/.android/debug.keystore
 
       - name: Gerar ícones e splash
         run: |
