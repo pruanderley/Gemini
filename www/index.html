@@ -71,6 +71,15 @@
     width:100%; margin-top:6px; margin-bottom:10px; padding:8px; background:var(--panel-2); color:var(--text);
     border:1px solid var(--border); border-radius:6px; font-size:13px;
   }
+  #api-settings{
+    padding:10px 16px; border-bottom:1px solid var(--border);
+  }
+  #api-settings label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; font-family:var(--mono); display:block;}
+  #api-settings select{
+    width:100%; margin-top:5px; margin-bottom:8px; padding:7px; background:var(--panel-2); color:var(--text);
+    border:1px solid var(--border); border-radius:6px; font-size:12.5px;
+  }
+  #api-settings select:last-child{margin-bottom:0;}
   #conversations{
     flex:1; overflow-y:auto; padding:8px;
   }
@@ -404,6 +413,22 @@
       <button id="zoom-in" type="button">＋</button>
     </div>
   </div>
+  <div id="api-settings">
+    <label for="history-limit-select">Histórico enviado à IA</label>
+    <select id="history-limit-select">
+      <option value="0">Conversa inteira</option>
+      <option value="10">Últimas 10 mensagens</option>
+      <option value="20">Últimas 20 mensagens</option>
+      <option value="40">Últimas 40 mensagens</option>
+    </select>
+    <label for="file-limit-select">Limite de anexo</label>
+    <select id="file-limit-select">
+      <option value="30000">30 mil caracteres (padrão)</option>
+      <option value="100000">100 mil caracteres</option>
+      <option value="300000">300 mil caracteres</option>
+      <option value="1000000">1 milhão de caracteres</option>
+    </select>
+  </div>
   <div id="conversations"></div>
   <div id="status-line" role="status" aria-live="polite">verificando conexão...</div>
 </div>
@@ -462,7 +487,9 @@ const fileInput = $('file-input');
 const attachPreview = $('attach-preview');
 
 let attachedFiles = []; // [{name, content}]
-const MAX_FILE_CHARS = 30000;
+// Configuráveis nos "Ajustes" da sidebar (salvos no localStorage)
+let MAX_FILE_CHARS = parseInt(localStorage.getItem('cfg_max_file_chars') || '30000', 10);
+let HISTORY_LIMIT = parseInt(localStorage.getItem('cfg_history_limit') || '0', 10); // 0 = conversa inteira
 let currentController = null;
 
 const PROVIDERS = {
@@ -1427,11 +1454,23 @@ function geminiErrorHint(status, body){
   return base;
 }
 
+// Janela deslizante de histórico: se o usuário configurou um limite,
+// envia só as últimas N mensagens pra API (economiza tokens em conversas longas).
+// O histórico completo continua salvo e visível na tela — isso afeta só o que vai pra API.
+function apiMessages(convo){
+  let msgs = HISTORY_LIMIT > 0 ? convo.messages.slice(-HISTORY_LIMIT) : convo.messages;
+  // Gemini e Claude exigem que a primeira mensagem seja do usuário;
+  // se o corte deixou uma resposta da IA no início, descarta ela
+  while(msgs.length && msgs[0].role === 'assistant') msgs = msgs.slice(1);
+  return msgs;
+}
+
 async function sendToGemini(convo, assistantBubble){
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:streamGenerateContent?alt=sse`;
-  const geminiContents = convo.messages.map((m, idx) => ({
+  const msgs = apiMessages(convo);
+  const geminiContents = msgs.map((m, idx) => ({
     role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: idx === convo.messages.length - 1 && m.role === 'user' ? m.content + LANGUAGE_REMINDER : m.content }]
+    parts: [{ text: idx === msgs.length - 1 && m.role === 'user' ? m.content + LANGUAGE_REMINDER : m.content }]
   }));
 
   const res = await fetch(url, {
@@ -1505,7 +1544,7 @@ async function sendToClaude(convo, assistantBubble){
       model: currentModel,
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
-      messages: withLanguageReminder(convo.messages.map(m => ({role: m.role, content: m.content}))),
+      messages: withLanguageReminder(apiMessages(convo).map(m => ({role: m.role, content: m.content}))),
       stream: true
     }),
     signal: currentController.signal
@@ -1557,7 +1596,7 @@ async function streamOpenAICompatible(url, convo, assistantBubble){
     },
     body: JSON.stringify({
       model: currentModel,
-      messages: [{role:'system', content: SYSTEM_PROMPT}, ...withLanguageReminder(convo.messages.map(m => ({role: m.role, content: m.content})))],
+      messages: [{role:'system', content: SYSTEM_PROMPT}, ...withLanguageReminder(apiMessages(convo).map(m => ({role: m.role, content: m.content})))],
       stream: true
     }),
     signal: currentController.signal
@@ -1646,6 +1685,22 @@ hamburgerBtn.addEventListener('click', () => {
   sidebarEl.classList.contains('open') ? closeSidebar() : openSidebar();
 });
 sidebarOverlay.addEventListener('click', closeSidebar);
+
+// ── AJUSTES (histórico enviado à IA e limite de anexo) ──
+const historyLimitSelect = $('history-limit-select');
+const fileLimitSelect = $('file-limit-select');
+historyLimitSelect.value = String(HISTORY_LIMIT);
+if(historyLimitSelect.value === '') historyLimitSelect.value = '0';
+fileLimitSelect.value = String(MAX_FILE_CHARS);
+if(fileLimitSelect.value === '') fileLimitSelect.value = '30000';
+historyLimitSelect.addEventListener('change', () => {
+  HISTORY_LIMIT = parseInt(historyLimitSelect.value, 10);
+  localStorage.setItem('cfg_history_limit', historyLimitSelect.value);
+});
+fileLimitSelect.addEventListener('change', () => {
+  MAX_FILE_CHARS = parseInt(fileLimitSelect.value, 10);
+  localStorage.setItem('cfg_max_file_chars', fileLimitSelect.value);
+});
 
 // fecha o menu automaticamente no celular ao criar conversa
 $('new-chat').addEventListener('click', () => { if(isMobile()) closeSidebar(); });
