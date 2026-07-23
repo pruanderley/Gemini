@@ -63,11 +63,7 @@ jobs:
               -keypass gemini123 \
               -dname "CN=Gemini API, OU=App, O=Uanderley, L=Brasil, ST=Brasil, C=BR" \
               -noprompt
-            echo ""
-            echo "══════════════════════════════════════════"
-            echo "IMPORTANTE: Salve este Secret no GitHub!"
-            echo "Settings > Secrets > KEYSTORE_BASE64"
-            echo "══════════════════════════════════════════"
+            echo "══ COPIE O BASE64 ABAIXO E SALVE COMO SECRET KEYSTORE_BASE64 ══"
             base64 -w 0 android/app/gemini-release.keystore
             echo ""
           fi
