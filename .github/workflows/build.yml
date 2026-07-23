@@ -37,13 +37,32 @@ jobs:
           mkdir -p android/app/src/main/java/com/gemini/google
           cp patches/MainActivity.java android/app/src/main/java/com/gemini/google/MainActivity.java
 
-      - name: Gerar ícones e splash (se a pasta assets existir)
+      - name: Numerar a versão (permite atualizar por cima)
         run: |
-          if [ -d "assets" ]; then
-            npx @capacitor/assets generate --android
-          else
-            echo "Pasta assets/ não encontrada — pulando geração de ícones"
+          sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"1.0.${{ github.run_number }}\"/" android/app/build.gradle
+          grep -E "versionCode|versionName" android/app/build.gradle
+
+      - name: Usar keystore fixo (assinatura igual em todos os builds)
+        run: |
+          if [ ! -f "keystore/debug.keystore" ]; then
+            echo "ERRO: arquivo keystore/debug.keystore não encontrado no repositório!"
+            exit 1
           fi
+          mkdir -p ~/.android
+          cp keystore/debug.keystore ~/.android/debug.keystore
+
+      - name: Gerar ícones e splash
+        run: |
+          if [ ! -d "assets" ]; then
+            echo "ERRO: pasta assets/ não encontrada na raiz do repositório!"
+            echo "Conteúdo da raiz:"
+            ls -la
+            exit 1
+          fi
+          echo "Arquivos encontrados em assets/:"
+          ls -la assets/
+          npx @capacitor/assets generate --android
 
       - name: Sincronizar Capacitor
         run: npx cap sync android
