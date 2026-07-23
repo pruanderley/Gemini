@@ -1,12 +1,14 @@
 package com.gemini.google;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.JavascriptInterface;
@@ -19,21 +21,24 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
+    private static final int FILE_CHOOSER_REQUEST = 4587;
+
     private WebView geminiWebView;
     private FrameLayout geminiContainer;
     private boolean geminiOpen = false;
+    private ValueCallback<Uri[]> fileChooserCallback;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Container sobreposto — cobre a tela toda quando aberto
+        // Container sobreposto - cobre a tela toda quando aberto
         geminiContainer = new FrameLayout(this);
         geminiContainer.setVisibility(View.GONE);
         geminiContainer.setBackgroundColor(0xFF0f0f0f);
 
-        // WebView nativo — não tem restrições de iframe
+        // WebView nativo - nao tem restricoes de iframe
         geminiWebView = new WebView(this);
         WebSettings settings = geminiWebView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -53,12 +58,35 @@ public class MainActivity extends BridgeActivity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(geminiWebView, true);
 
-        geminiWebView.setWebChromeClient(new WebChromeClient());
+        // WebChromeClient com suporte a upload de arquivos.
+        // Sem o onShowFileChooser, tocar em "Arquivos" no Gemini nao abre nada.
+        geminiWebView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView webView,
+                                             ValueCallback<Uri[]> filePathCallback,
+                                             FileChooserParams fileChooserParams) {
+                // Se ja havia uma escolha pendente, cancela ela primeiro
+                if (fileChooserCallback != null) {
+                    fileChooserCallback.onReceiveValue(null);
+                }
+                fileChooserCallback = filePathCallback;
+                try {
+                    Intent intent = fileChooserParams.createIntent();
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                    startActivityForResult(intent, FILE_CHOOSER_REQUEST);
+                } catch (Exception e) {
+                    fileChooserCallback = null;
+                    return false;
+                }
+                return true;
+            }
+        });
+
         geminiWebView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                // Tudo do Google fica no WebView — não delega para app externo
+                // Tudo do Google fica no WebView - nao delega para app externo
                 if (url.contains("google.com") ||
                     url.contains("googleapis.com") ||
                     url.contains("gstatic.com") ||
@@ -104,8 +132,35 @@ public class MainActivity extends BridgeActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // Expõe bridge para o JS do index.html
+        // Expoe bridge para o JS do index.html
         getBridge().getWebView().addJavascriptInterface(new GeminiBridge(), "Android");
+    }
+
+    // Recebe o arquivo escolhido e devolve para o WebView do Gemini
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == FILE_CHOOSER_REQUEST) {
+            if (fileChooserCallback != null) {
+                Uri[] results = null;
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    if (data.getClipData() != null) {
+                        // Varios arquivos selecionados
+                        int count = data.getClipData().getItemCount();
+                        results = new Uri[count];
+                        for (int i = 0; i < count; i++) {
+                            results[i] = data.getClipData().getItemAt(i).getUri();
+                        }
+                    } else if (data.getData() != null) {
+                        // Um arquivo so
+                        results = new Uri[] { data.getData() };
+                    }
+                }
+                fileChooserCallback.onReceiveValue(results);
+                fileChooserCallback = null;
+            }
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     public class GeminiBridge {
@@ -156,7 +211,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onBackPressed() {
-        // Se Gemini Web está aberto
+        // Se Gemini Web esta aberto
         if (geminiOpen) {
             if (geminiWebView.canGoBack()) {
                 geminiWebView.goBack();
@@ -166,7 +221,7 @@ public class MainActivity extends BridgeActivity {
             }
             return;
         }
-        // Comportamento padrão do app
+        // Comportamento padrao do app
         getBridge().getWebView().evaluateJavascript(
             "(function(){ return typeof window.handleBack==='function'" +
             "?window.handleBack():false; })()",
@@ -183,7 +238,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPause() {
         super.onPause();
-        // Grava os cookies em disco — mantém o login do Google
+        // Grava os cookies em disco - mantem o login do Google
         // mesmo se o Android matar o app em segundo plano
         CookieManager.getInstance().flush();
     }
