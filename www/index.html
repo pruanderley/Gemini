@@ -1667,6 +1667,16 @@ function openGeminiWeb() {
     window.open('https://gemini.google.com/app?hl=pt-BR', '_blank');
   }
 }
+
+// ── BOTÃO VOLTAR DO ANDROID ──
+// Chamado pela MainActivity. Retorna true = o app tratou o voltar; false = pode fechar o app.
+window.handleBack = function(){
+  if (sidebarEl.classList.contains('open')) {
+    closeSidebar();
+    return true;
+  }
+  return false;
+};
 </script>
 </body>
 </html>
