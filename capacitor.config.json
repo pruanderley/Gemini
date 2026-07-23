@@ -1,0 +1,10 @@
+{
+  "appId": "com.gemini.google",
+  "appName": "Gemini API",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true,
+    "minWebViewVersion": 60,
+    "backgroundColor": "#0f0f0f"
+  }
+}
