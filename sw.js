@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ollama-chat-v12';
+const CACHE_NAME = 'gemini-api-v13';
 const ASSETS = [
   './index.html',
   './manifest.json',
@@ -27,6 +27,15 @@ self.addEventListener('activate', (event) => {
 // Chamadas para Ollama (localhost) e Gemini (API do Google) sempre vão direto pra rede,
 // nunca passam pelo cache — são conversas em tempo real, não fazem sentido offline.
 self.addEventListener('fetch', (event) => {
+  // Navegações (abrir o app pela URL raiz, recarregar a página):
+  // serve o index.html do cache — é isso que faz o PWA abrir offline.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      caches.match('./index.html').then((cached) => cached || fetch(event.request))
+    );
+    return;
+  }
+
   const url = event.request.url;
   const isAppShell = ASSETS.some((asset) => url.endsWith(asset.replace('./', '')));
 
