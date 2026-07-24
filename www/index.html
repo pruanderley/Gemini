@@ -395,6 +395,15 @@
         width="16" height="16" onerror="this.style.display='none'">
       Claude Web
     </button>
+    <button id="deepseek-web-btn" onclick="openDeepSeekWeb()" style="
+      width:100%;padding:8px 12px;border-radius:8px;border:1px solid #4D6BFE;
+      background:rgba(77,107,254,0.12);color:#4D6BFE;
+      font-size:13px;cursor:pointer;margin-top:6px;
+      display:flex;align-items:center;gap:8px;justify-content:center;">
+      <img src="https://chat.deepseek.com/favicon.ico"
+        width="16" height="16" onerror="this.style.display='none'">
+      DeepSeek Web
+    </button>
     <div id="io-buttons">
       <button id="export-btn" type="button">⬇ Exportar</button>
       <button id="import-btn" type="button">⬆ Importar</button>
@@ -1791,6 +1800,15 @@ function openClaudeWeb() {
   } else {
     // Fallback: abre no navegador
     window.open('https://claude.ai', '_blank');
+  }
+}
+
+// ── DEEPSEEK WEB ──
+function openDeepSeekWeb() {
+  if (typeof window.Android !== 'undefined' && typeof window.Android.openGeminiWeb === 'function') {
+    window.Android.openGeminiWeb('https://chat.deepseek.com');
+  } else {
+    window.open('https://chat.deepseek.com', '_blank');
   }
 }
 
