@@ -28,6 +28,32 @@ public class MainActivity extends BridgeActivity {
     private boolean geminiOpen = false;
     private ValueCallback<Uri[]> fileChooserCallback;
 
+    // Dominio base do site aberto no WebView (ex: "google.com", "claude.ai").
+    // Navegacao dentro desse dominio fica no app; o resto abre no browser.
+    private String allowedBaseDomain = "google.com";
+
+    private static String baseDomainOf(String host) {
+        if (host == null || host.isEmpty()) return "";
+        String[] parts = host.split("\\.");
+        if (parts.length < 2) return host;
+        return parts[parts.length - 2] + "." + parts[parts.length - 1];
+    }
+
+    private boolean shouldStayInWebView(String url) {
+        String host;
+        try { host = Uri.parse(url).getHost(); } catch (Exception e) { return false; }
+        if (host == null) return false;
+        // dominio do site atualmente aberto
+        if (!allowedBaseDomain.isEmpty() && host.endsWith(allowedBaseDomain)) return true;
+        // dominios de apoio (login, imagens, scripts) do Google e da Anthropic
+        return host.endsWith("google.com")
+            || host.endsWith("googleapis.com")
+            || host.endsWith("gstatic.com")
+            || host.endsWith("googleusercontent.com")
+            || host.endsWith("anthropic.com")
+            || host.endsWith("claude.ai");
+    }
+
     @Override
     @SuppressLint("SetJavaScriptEnabled")
     public void onCreate(Bundle savedInstanceState) {
@@ -86,15 +112,12 @@ public class MainActivity extends BridgeActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                // Tudo do Google fica no WebView - nao delega para app externo
-                if (url.contains("google.com") ||
-                    url.contains("googleapis.com") ||
-                    url.contains("gstatic.com") ||
-                    url.contains("accounts.google")) {
+                // Site aberto (e dominios de apoio) fica no WebView do app
+                if (shouldStayInWebView(url)) {
                     view.loadUrl(url);
                     return true;
                 }
-                // Outros links abrem no browser externo
+                // Links realmente externos abrem no browser
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -106,9 +129,7 @@ public class MainActivity extends BridgeActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 // Fallback para Android antigo
-                if (url.contains("google.com") ||
-                    url.contains("googleapis.com") ||
-                    url.contains("gstatic.com")) {
+                if (shouldStayInWebView(url)) {
                     view.loadUrl(url);
                     return true;
                 }
@@ -168,11 +189,15 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public void openGeminiWeb(String url) {
             runOnUiThread(() -> {
-                if (url != null && !url.isEmpty()) {
-                    geminiWebView.loadUrl(url);
-                } else {
-                    geminiWebView.loadUrl("https://gemini.google.com/app?hl=pt-BR");
+                String destino = (url != null && !url.isEmpty())
+                    ? url
+                    : "https://gemini.google.com/app?hl=pt-BR";
+                try {
+                    allowedBaseDomain = baseDomainOf(Uri.parse(destino).getHost());
+                } catch (Exception e) {
+                    allowedBaseDomain = "google.com";
                 }
+                geminiWebView.loadUrl(destino);
                 geminiContainer.setVisibility(View.VISIBLE);
                 geminiContainer.bringToFront();
                 geminiOpen = true;
