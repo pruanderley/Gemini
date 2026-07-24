@@ -15,8 +15,18 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.app.DownloadManager;
+import android.content.Context;
+import android.os.Environment;
+import android.util.Base64;
+import android.webkit.MimeTypeMap;
+import android.webkit.URLUtil;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
+import android.widget.Toast;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -112,12 +122,10 @@ public class MainActivity extends BridgeActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                // Site aberto (e dominios de apoio) fica no WebView do app
                 if (shouldStayInWebView(url)) {
                     view.loadUrl(url);
                     return true;
                 }
-                // Links realmente externos abrem no browser
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -128,7 +136,6 @@ public class MainActivity extends BridgeActivity {
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                // Fallback para Android antigo
                 if (shouldStayInWebView(url)) {
                     view.loadUrl(url);
                     return true;
@@ -139,7 +146,124 @@ public class MainActivity extends BridgeActivity {
                 } catch (Exception e) { e.printStackTrace(); }
                 return true;
             }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                // Injeta interceptor de downloads em CADA pagina carregada.
+                // O DownloadListener do WebView NAO dispara pra blob: URLs,
+                // entao capturamos no JS: escuta cliques em <a download>,
+                // converte blob/data pra base64, e chama o bridge pra salvar.
+                String js = "(function(){"
+                    + "if(window.__dlInterceptor) return;"
+                    + "window.__dlInterceptor=true;"
+                    // Captura clique em <a download> na fase de captura (antes do site)
+                    + "document.addEventListener('click',function(e){"
+                    + "  var a=e.target.closest('a[download],a[href^="blob:"],a[href^="data:"]');"
+                    + "  if(!a) return;"
+                    + "  var href=a.href||a.getAttribute('href')||'';"
+                    + "  if(!href.startsWith('blob:')&&!href.startsWith('data:')) return;"
+                    + "  e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();"
+                    + "  var fname=a.download||a.getAttribute('download')||'download';"
+                    + "  if(href.startsWith('blob:')){"
+                    + "    fetch(href).then(function(r){return r.blob();}).then(function(b){"
+                    + "      var reader=new FileReader();"
+                    + "      reader.onloadend=function(){"
+                    + "        var b64=reader.result.split(',')[1]||'';"
+                    + "        AppDownload.saveFile(b64,b.type||'application/octet-stream',fname);"
+                    + "      };"
+                    + "      reader.readAsDataURL(b);"
+                    + "    }).catch(function(err){alert('Erro: '+err.message);});"
+                    + "  } else if(href.startsWith('data:')){"
+                    + "    var parts=href.split(',');"
+                    + "    var mime=(parts[0].split(':')[1]||'').split(';')[0]||'application/octet-stream';"
+                    + "    var b64=parts[1]||'';"
+                    + "    AppDownload.saveFile(b64,mime,fname);"
+                    + "  }"
+                    + "},true);"
+                    // Intercepta tambem cliques em botoes que disparam download programatico
+                    // (ex: Claude cria <a> dinamicamente, clica nele, e remove)
+                    + "var origClick=HTMLAnchorElement.prototype.click;"
+                    + "HTMLAnchorElement.prototype.click=function(){"
+                    + "  var href=this.href||'';"
+                    + "  var dl=this.download||this.getAttribute('download');"
+                    + "  if(dl!==null&&dl!==undefined&&(href.startsWith('blob:')||href.startsWith('data:'))){"
+                    + "    var fname=dl||'download';"
+                    + "    if(href.startsWith('blob:')){"
+                    + "      var self=this;"
+                    + "      fetch(href).then(function(r){return r.blob();}).then(function(b){"
+                    + "        var reader=new FileReader();"
+                    + "        reader.onloadend=function(){"
+                    + "          var b64=reader.result.split(',')[1]||'';"
+                    + "          AppDownload.saveFile(b64,b.type||'application/octet-stream',fname);"
+                    + "        };"
+                    + "        reader.readAsDataURL(b);"
+                    + "      }).catch(function(err){alert('Erro: '+err.message);});"
+                    + "    } else if(href.startsWith('data:')){"
+                    + "      var parts=href.split(',');"
+                    + "      var mime=(parts[0].split(':')[1]||'').split(';')[0]||'application/octet-stream';"
+                    + "      AppDownload.saveFile(parts[1]||'',mime,fname);"
+                    + "    }"
+                    + "    return;"
+                    + "  }"
+                    + "  return origClick.apply(this,arguments);"
+                    + "};"
+                    + "})()";
+                view.evaluateJavascript(js, null);
+            }
         });
+
+        // DownloadListener para URLs normais (https:) - o DownloadManager cuida
+        geminiWebView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
+            if (url == null || url.startsWith("blob:") || url.startsWith("data:")) return;
+            try {
+                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                String fileName = URLUtil.guessFileName(url, contentDisposition, mimeType);
+                request.setMimeType(mimeType);
+                request.addRequestHeader("User-Agent", userAgent);
+                String cookies = CookieManager.getInstance().getCookie(url);
+                if (cookies != null) request.addRequestHeader("Cookie", cookies);
+                request.setTitle(fileName);
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+                DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                dm.enqueue(request);
+                Toast.makeText(MainActivity.this, "Baixando: " + fileName, Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                e.printStackTrace();
+                Toast.makeText(MainActivity.this, "Erro ao iniciar download", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Bridge JS para downloads de blob:/data: (chamado pelo interceptor injetado em onPageFinished)
+        geminiWebView.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void saveFile(String base64, String mimeType, String fileName) {
+                try {
+                    byte[] data = Base64.decode(base64, Base64.DEFAULT);
+                    // Se o nome nao tem extensao, adiciona uma baseada no MIME
+                    if (fileName != null && !fileName.contains(".")) {
+                        String ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType);
+                        if (ext != null && !ext.isEmpty()) fileName = fileName + "." + ext;
+                    }
+                    if (fileName == null || fileName.isEmpty()) {
+                        String ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType);
+                        fileName = "download_" + System.currentTimeMillis() + "." + (ext != null ? ext : "bin");
+                    }
+                    File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    if (!dir.exists()) dir.mkdirs();
+                    File file = new File(dir, fileName);
+                    FileOutputStream fos = new FileOutputStream(file);
+                    fos.write(data);
+                    fos.close();
+                    final String msg = "Salvo em Downloads: " + fileName;
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Erro ao salvar arquivo", Toast.LENGTH_SHORT).show());
+                }
+            }
+        }, "AppDownload");
 
         // Adiciona o WebView no container
         geminiContainer.addView(geminiWebView,
