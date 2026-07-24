@@ -992,24 +992,25 @@ document.addEventListener('click', (e) => {
     const block = expandBtn.closest('.code-block');
     const open = block.classList.toggle('collapsed');
     expandBtn.textContent = open
-      ? `Mostrar as ${block.querySelector('pre code').innerText.split('\n').length} linhas`
+      ? `Mostrar as ${block.querySelector('pre code').textContent.split('\n').length} linhas`
       : 'Recolher';
     return;
   }
   const dlBtn = e.target.closest('.code-download-btn');
   if(!dlBtn) return;
   const block = dlBtn.closest('.code-block');
-  const code = block.querySelector('pre code').innerText;
+  const code = block.querySelector('pre code').textContent;
   const lang = (block.dataset.lang || '').toLowerCase().split(' ')[0];
   const ext = CODE_EXT[lang] || 'txt';
   const stamp = new Date().toISOString().slice(0,16).replace('T','_').replace(':','h');
-  const blob = new Blob([code], {type:'text/plain;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
+  const base64 = btoa(unescape(encodeURIComponent(code)));
   const a = document.createElement('a');
-  a.href = url;
+  a.href = `data:text/plain;charset=utf-8;base64,${base64}`;
   a.download = `codigo_${stamp}.${ext}`;
+  a.style.display = 'none';
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
   dlBtn.textContent = '\u2713 Salvo';
   dlBtn.classList.add('saved');
   setTimeout(() => { dlBtn.textContent = '\u2b07 Baixar'; dlBtn.classList.remove('saved'); }, 1500);
@@ -1325,14 +1326,16 @@ exportBtn.addEventListener('click', () => {
     exported_at: new Date().toISOString(),
     conversations: conversations
   };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
+  const jsonStr = JSON.stringify(payload, null, 2);
+  const base64 = btoa(unescape(encodeURIComponent(jsonStr)));
   const a = document.createElement('a');
   const dataStr = new Date().toISOString().slice(0,10);
-  a.href = url;
-  a.download = `conversas-ollama-${dataStr}.json`;
+  a.href = `data:application/json;charset=utf-8;base64,${base64}`;
+  a.download = `conversas-gemini-${dataStr}.json`;
+  a.style.display = 'none';
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
 });
 
 importBtn.addEventListener('click', () => importFileInput.click());
