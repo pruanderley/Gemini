@@ -159,7 +159,7 @@ public class MainActivity extends BridgeActivity {
                     + "window.__dlInterceptor=true;"
                     // Captura clique em <a download> na fase de captura (antes do site)
                     + "document.addEventListener('click',function(e){"
-                    + "  var a=e.target.closest('a[download],a[href^="blob:"],a[href^="data:"]');"
+                    + "  var a=e.target.closest('a[download]');"
                     + "  if(!a) return;"
                     + "  var href=a.href||a.getAttribute('href')||'';"
                     + "  if(!href.startsWith('blob:')&&!href.startsWith('data:')) return;"
@@ -399,4 +399,4 @@ public class MainActivity extends BridgeActivity {
         }
         super.onDestroy();
     }
-            }
+}
