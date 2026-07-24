@@ -399,4 +399,4 @@ public class MainActivity extends BridgeActivity {
         }
         super.onDestroy();
     }
-}
+            }
